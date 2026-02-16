@@ -788,8 +788,7 @@ class FirmwareModifier:
         
         self._patch_vbmeta()
         
-        if getattr(self.ctx, "enable_ksu", False):
-            self._patch_ksu()
+        # All other image patches removed as requested
         
         self.logger.info("Firmware Modification Completed.")
 

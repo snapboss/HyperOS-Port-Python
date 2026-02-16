@@ -106,7 +106,7 @@ class Repacker:
         """Pack EROFS image"""
         cmd = [
             "mkfs.erofs",
-            "-zlz4hc,9",
+            "-zlz4hc,8",
             "-T", self.fix_timestamp,
             "--mount-point", f"/{part_name}",
             "--fs-config-file", str(fs_config),
@@ -332,8 +332,6 @@ class Repacker:
         self.logger.info("Compressing super.img to super.zst...")
         zst_path = self.ctx.target_dir / "super.zst"
         try:
-            # Try to use zstd from system, or bin/zstd
-            # Assume system zstd is available or copy it
             self.shell.run(["zstd", "--rm", str(super_img), "-o", str(zst_path)])
             self.logger.info("Compressed super.zst generated.")
         except Exception as e:
@@ -370,36 +368,59 @@ class Repacker:
             shutil.rmtree(out_path)
         out_path.mkdir(parents=True, exist_ok=True)
         
-        # 1. Create directory structure
-        bin_windows = out_path / "bin/windows"
-        bin_windows.mkdir(parents=True, exist_ok=True)
+        # 1. Create directory structure and use template
+        # Check for project root template
+        root_template = self.ctx.project_root / "template"
+        if root_template.exists():
+            self.logger.info(f"Using root template from {root_template}")
+            shutil.copytree(root_template, out_path, dirs_exist_ok=True)
         
-        firmware_update = out_path / "firmware-update"
-        firmware_update.mkdir(parents=True, exist_ok=True)
+        # Ensure standard folders exist
+        bin_dir = out_path / "bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        
+        scripts_dir = out_path / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        
+        images_dir = out_path / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
         
         meta_inf = out_path / "META-INF/com/google/android"
         meta_inf.mkdir(parents=True, exist_ok=True)
 
-        # 2. Copy super image (must be zst for hybrid)
-        self.logger.info(f"Copying {super_image_path.name}...")
-        shutil.copy2(super_image_path, out_path / "super.zst")
+        # 2. Copy super image and all component images
+        self.logger.info(f"Adding all partition images (~30 files) to images/ ...")
         
+        # Copy super image
+        final_super = super_image_path
+        if final_super.exists():
+            shutil.copy2(final_super, images_dir / final_super.name)
+            # Ensure super.zst exists for update-binary
+            if final_super.name == "super.zst":
+                 pass
+            elif final_super.name == "super.img":
+                 # Hybrid might need super.zst, but if user wants super.img too...
+                 pass
+
+        # Copy logical partition images (system, product, etc.)
+        for img in self.ctx.target_dir.glob("*.img"):
+            if img.name == "super.img": continue
+            shutil.copy2(img, images_dir)
+
         # 3. Copy firmware images
         if self.ctx.repack_images_dir.exists():
             for fw in self.ctx.repack_images_dir.glob("*.img"):
-                 # Special handling for boot.img: place in root
-                 if fw.name == "boot.img":
-                     shutil.copy2(fw, out_path / "boot.img")
-                 else:
-                     shutil.copy2(fw, firmware_update)
-        
+                 shutil.copy2(fw, images_dir)
+                 
         # 4. Copy tools and scripts
         flash_template = Path("bin/flash")
         
         if flash_template.exists():
-             # A. Windows Tools
-             if (flash_template / "platform-tools-windows").exists():
-                 shutil.copytree(flash_template / "platform-tools-windows", bin_windows, dirs_exist_ok=True)
+             # A. Flashing Tools
+             # Copy everything from flash_template/bin to out/bin
+             flash_bin = flash_template / "bin"
+             if flash_bin.exists():
+                 shutil.copytree(flash_bin, bin_dir, dirs_exist_ok=True)
              
              # B. Recovery Tools (zstd)
              # The update-binary expects META-INF/zstd
@@ -409,8 +430,8 @@ class Repacker:
              
              # C. Scripts & Update Binary
              files_to_process = {
-                 "windows_flash_script.bat": out_path / "windows_flash_script.bat",
-                 "mac_linux_flash_script.sh": out_path / "mac_linux_flash_script.sh",
+                 "windows_flash_script.bat": scripts_dir / "windows_flash_script.bat",
+                 "mac_linux_flash_script.sh": scripts_dir / "mac_linux_flash_script.sh",
                  "update-binary": meta_inf / "update-binary"
              }
              
@@ -427,13 +448,13 @@ class Repacker:
                      if "flash_script" in src_name:
                          if not self.ctx.is_ab_device:
                              self._patch_script_for_a_only(dest_path)
-                         self._patch_script_for_firmware(dest_path, firmware_update)
+                         self._patch_script_for_firmware(dest_path, images_dir)
                      
                      # Specific handling for Recovery script
                      if src_name == "update-binary":
                          if not self.ctx.is_ab_device:
                              self._patch_update_binary_for_a_only(dest_path)
-                         self._patch_update_binary_firmware(dest_path, firmware_update)
+                         self._patch_update_binary_firmware(dest_path, images_dir)
 
         # 5. Zip the package
         self.logger.info("Zipping hybrid package...")
