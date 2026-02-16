@@ -35,7 +35,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y zstd axel aria2
+          sudo apt-get install -y zstd aria2
           pip install -r requirements.txt || pip install requests glob2
 
       - name: Prepare Binaries
@@ -46,9 +46,9 @@ jobs:
         run: |
           mkdir -p downloads
           echo "Downloading Stock ROM..."
-          axel -n 16 -o downloads/stock.zip "${{ github.event.inputs.stock_url }}"
+          aria2c -x 16 -s 16 -d downloads -o stock.zip "${{ github.event.inputs.stock_url }}"
           echo "Downloading Port ROM..."
-          axel -n 16 -o downloads/port.zip "${{ github.event.inputs.port_url }}"
+          aria2c -x 16 -s 16 -d downloads -o port.zip "${{ github.event.inputs.port_url }}"
 
       - name: Run Porting Tool
         run: |
