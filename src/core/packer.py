@@ -459,6 +459,11 @@ class Repacker:
         (meta_inf / "updater-script").write_text("# dummy\n", encoding='utf-8')
 
         # 5. Zip the package
+        if os.getenv("GITHUB_ACTIONS") == "true":
+            self.logger.info("GitHub Actions detected: Skipping local zipping to avoid zip-in-zip.")
+            self.logger.info(f"Staging directory preserved for GHA artifact upload: {out_path}")
+            return
+
         self.logger.info("Zipping hybrid package...")
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         final_zip_name = f"{self.ctx.stock_rom_code}-hybrid-{self.ctx.target_rom_version}-{timestamp}.zip"

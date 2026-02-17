@@ -30,6 +30,9 @@ class PropertyModifier:
         # 3. Apply specific fixes (Millet, Blur, Cgroup)
         self._apply_specific_fixes()
         
+        # 4. mi_ext prop migration
+        self._migrate_mi_ext_props()
+        
         self._regenerate_fingerprint()
         
         self.logger.info("Build.prop modifications completed.")
@@ -90,6 +93,11 @@ class PropertyModifier:
 
         # Iterate all build.prop and modify
         for prop_file in self.ctx.target_dir.rglob("build.prop"):
+            # [NEW] Skip mi_ext to preserve original port properties for migration source
+            if "mi_ext" in str(prop_file.relative_to(self.ctx.target_dir)):
+                self.logger.debug(f"Skipping global update for {prop_file.name} in mi_ext")
+                continue
+
             lines = []
             with open(prop_file, 'r', encoding='utf-8', errors='ignore') as f:
                 lines = f.readlines()
@@ -214,6 +222,49 @@ class PropertyModifier:
                 self.logger.debug(f"[{vendor_prop.name}] Commenting out persist.sys.millet.cgroup1")
                 content = content.replace("persist.sys.millet.cgroup1", "#persist.sys.millet.cgroup1")
                 vendor_prop.write_text(content, encoding='utf-8')
+
+    def _migrate_mi_ext_props(self):
+        """Migrate specific properties from mi_ext to product build.prop as requested"""
+        self.logger.info("Migrating mi_ext properties to product/etc/build.prop...")
+        
+        mi_ext_prop = self.ctx.target_dir / "mi_ext/etc/build.prop"
+        product_prop = self.ctx.target_dir / "product/etc/build.prop"
+        
+        if not mi_ext_prop.exists() or not product_prop.exists():
+            self.logger.warning("mi_ext or product build.prop not found, skipping property migration.")
+            return
+            
+        mi_props_keys = [
+            "ro.miui.support.system.app.uninstall.v2",
+            "ro.mi.os.version.code",
+            "ro.mi.os.version.name",
+            "ro.mi.os.version.incremental"
+        ]
+        
+        # Extract values from mi_ext
+        extracted = {}
+        try:
+            content = mi_ext_prop.read_text(encoding='utf-8', errors='ignore')
+            for key in mi_props_keys:
+                match = re.search(f"^{re.escape(key)}=(.*)", content, re.MULTILINE)
+                if match:
+                    extracted[key] = match.group(1).strip()
+        except Exception as e:
+            self.logger.error(f"Failed to read mi_ext props: {e}")
+            return
+            
+        # Apply to product
+        if extracted:
+            for key, value in extracted.items():
+                self._update_or_append_prop(product_prop, key, value)
+            self.logger.info(f"Successfully migrated {len(extracted)} properties from mi_ext.")
+
+        # Aggressive Cleanup: Delete mi_ext source folder now that migration is complete
+        # This ensures it's NOT packed into super.img/payload.bin
+        mi_ext_dir = self.ctx.target_dir / "mi_ext"
+        if mi_ext_dir.exists():
+            self.logger.info("Aggressive Cleanup: Removing mi_ext directory after property migration.")
+            shutil.rmtree(mi_ext_dir)
 
     def _update_or_append_prop(self, file_path: Path, key: str, value: str):
         """Helper function: update or append property"""

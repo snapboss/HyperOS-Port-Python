@@ -74,6 +74,7 @@ jobs:
         with:
           name: HyperOS-Port-${{ github.run_id }}
           path: |
-            out/*
+            out/*_hybrid/
+            out/*.zip
             porting.log
           compression-level: 9

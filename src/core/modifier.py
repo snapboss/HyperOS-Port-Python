@@ -62,6 +62,7 @@ class SystemModifier:
         self._replace_misound_and_biometric()
         self._fix_vndk_apex()
         self._copy_stock_apex()
+        self._merge_mi_ext()
         self._fix_vintf_manifest()
         self._debloat_system()
 
@@ -232,6 +233,41 @@ class SystemModifier:
                     shutil.copytree(item, target_apex_dir / item.name, dirs_exist_ok=True)
                 else:
                     shutil.copy2(item, target_apex_dir / item.name)
+
+    def _merge_mi_ext(self):
+        """Merge mi_ext contents into other partitions as requested"""
+        self.logger.info("Merging mi_ext into other partitions...")
+        
+        mi_ext_dir = self.ctx.target_dir / "mi_ext"
+        if not mi_ext_dir.exists():
+            self.logger.warning("mi_ext partition not found, skipping merge.")
+            return
+
+        # 1. mi_ext/system/* -> system/system/ (fallback to system/)
+        src_system = mi_ext_dir / "system"
+        if src_system.exists():
+            target_system = self.ctx.target_dir / "system/system"
+            if not target_system.exists():
+                target_system = self.ctx.target_dir / "system"
+            
+            self.logger.info(f"Merging mi_ext/system -> {target_system.name}")
+            shutil.copytree(src_system, target_system, dirs_exist_ok=True)
+
+        # 2. mi_ext/system_ext/* -> system_ext/
+        src_system_ext = mi_ext_dir / "system_ext"
+        if src_system_ext.exists():
+            target_system_ext = self.ctx.target_dir / "system_ext"
+            self.logger.info("Merging mi_ext/system_ext -> system_ext")
+            shutil.copytree(src_system_ext, target_system_ext, dirs_exist_ok=True)
+
+        # 3. mi_ext/product/* -> product/
+        src_product = mi_ext_dir / "product"
+        if src_product.exists():
+            target_product = self.ctx.target_dir / "product"
+            self.logger.info("Merging mi_ext/product -> product")
+            shutil.copytree(src_product, target_product, dirs_exist_ok=True)
+        
+        self.logger.info("mi_ext merge complete. mi_ext directory kept for property migration.")
     
     def _apply_device_overrides(self):
         base_code = self.ctx.stock_rom_code

@@ -133,6 +133,9 @@ class PortingContext:
 
         self._copy_firmware_images(list(partition_layout.keys())) 
         
+        # [PREREQUISITE] Get ROM info before wiping source folders
+        self.get_rom_info()
+
         # Aggressive Cleanup: Remove source extraction folders as they've been copied to target
         self.logger.info("Aggressive Cleanup: Removing source extraction directories...")
         for source_rom in [self.stock, self.port]:
@@ -140,7 +143,6 @@ class PortingContext:
                 shutil.rmtree(source_rom.extracted_dir)
             # Note: We keep images_dir for now as firmware copy-back might still need it
 
-        self.get_rom_info()        
         self.logger.info("Target Workspace Initialized.")
 
     def _install_partition(self, part_name: str, source_rom: RomPackage):
