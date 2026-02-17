@@ -14,9 +14,7 @@ class AppPatcher:
         self.xml = XmlUtils()
         # Register modules: APK name keyword -> Module class path
         self.registry = {
-            "Settings.apk": "src.modules.settings.SettingsModule",
             "Joyose.apk": "src.modules.joyose.JoyoseModule",
-            "*SecurityCenter.apk": "src.modules.securitycenter.SecurityCenterModule",
             "MIUIPackageInstaller.apk": "src.modules.installer.InstallerModule",
             "PowerKeeper.apk": "src.modules.powerkeeper.PowerKeeperModule",
             "MiuiGuardProvider.apk": "src.modules.guard.GuardModule",
