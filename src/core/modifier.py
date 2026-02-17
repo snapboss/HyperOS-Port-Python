@@ -59,7 +59,8 @@ class SystemModifier:
 
         self._replace_overlays()
         self._migrate_configs()
-        self._replace_misound_and_biometric()
+        # Removed _replace_misound_and_biometric() to fix FaceUnlock
+        self._relocate_pangu()
         self._fix_vndk_apex()
         self._copy_stock_apex()
         self._merge_mi_ext()
@@ -83,18 +84,12 @@ class SystemModifier:
         return None
 
     def _replace_overlays(self):
+        # Refined list to fix status bar alignment issues
         overlay_list = [
             "AospFrameworkResOverlay.apk",
             "MiuiFrameworkResOverlay.apk",
-            "MiuiCarrierConfigOverlay.apk",
-            "SettingsRroDeviceSystemUiOverlay.apk",
-            "DevicesAndroidOverlay.apk",
-            "DevicesOverlay.apk",
             "DeviceAndroidOverlay.apk",
             "DeviceOverlay.apk",
-            "SettingsRroDeviceHideStatusBarOverlay.apk",
-            "MiuiBiometricResOverlay.apk",
-            "MiuiFrameworkTelephonyResOverlay.apk"
         ]
 
         target_product = self.ctx.target_dir / "product"
@@ -140,42 +135,42 @@ class SystemModifier:
         if stock_json.exists():
              shutil.copy2(stock_json, target_json)
 
-    def _replace_misound_and_biometric(self):
-        target_product = self.ctx.target_dir / "product"
-        stock_product = self.ctx.stock.extracted_dir / "product"
+    def _relocate_pangu(self):
+        """
+        Move files from /product/pangu/system/ to /product/
+        1. /product/pangu/system/app -> product/app
+        2. /product/pangu/system/etc/permission -> product/etc/permissions
+        3. /product/pangu/system/priv-app -> product/priv-app
+        """
+        self.logger.info("Starting Pangu relocation...")
+        product_dir = self.ctx.target_dir / "product"
+        pangu_dir = product_dir / "pangu"
+        
+        if not pangu_dir.exists():
+            self.logger.info("Pangu directory not found, skipping relocation.")
+            return
 
-        # MiSound
-        base_misound = self._find_dir_recursive(stock_product, "MiSound")
-        port_misound = self._find_dir_recursive(target_product, "MiSound")
-        if base_misound and port_misound:
-            self.logger.info("Replacing MiSound...")
-            shutil.rmtree(port_misound)
-            shutil.copytree(base_misound, port_misound, dirs_exist_ok=True)
+        # Define relocation mappings
+        # (src_relative_to_pangu, target_relative_to_product)
+        mappings = [
+            ("system/app", "app"),
+            ("system/etc/permission", "etc/permissions"),
+            ("system/etc/permissions", "etc/permissions"),
+            ("system/priv-app", "priv-app")
+        ]
 
-        # MiuiBiometric
-        # 尝试模糊查找 *Biometric*
-        base_bio = None
-        try:
-            base_bio = next(stock_product.glob("app/*Biometric*"))
-        except StopIteration:
-            pass
+        for src_rel, tgt_rel in mappings:
+            src_path = pangu_dir / src_rel
+            tgt_path = product_dir / tgt_rel
             
-        if base_bio:
-            port_bio = None
-            try:
-                port_bio = next(target_product.glob("app/*Biometric*"))
-            except StopIteration:
-                pass
+            if src_path.exists():
+                self.logger.info(f"Relocating Pangu: {src_rel} -> {tgt_rel}")
+                tgt_path.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(src_path, tgt_path, dirs_exist_ok=True)
 
-            if port_bio:
-                self.logger.info("Replacing MiuiBiometric...")
-                shutil.rmtree(port_bio)
-                shutil.copytree(base_bio, port_bio, dirs_exist_ok=True)
-            else:
-                # 如果 Port 没有，则直接复制过去
-                target_app = target_product / "app"
-                target_app.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(base_bio, target_app / base_bio.name, dirs_exist_ok=True)
+        self.logger.info("Aggressive Cleanup: Removing Pangu residue.")
+        shutil.rmtree(pangu_dir)
+        self.logger.info("Pangu relocation completed.")
 
     def _apktool_decode(self, apk_path: Path, out_dir: Path):
         self.shell.run_java_jar(self.apktool, ["d", str(apk_path), "-o", str(out_dir), "-f"])
