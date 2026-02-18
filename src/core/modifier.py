@@ -93,6 +93,8 @@ class SystemModifier:
             "MiuiFrameworkResOverlay.apk",
             "DeviceAndroidOverlay.apk",
             "DeviceOverlay.apk",
+            "DevicesAndroidOverlay.apk",
+            "DevicesOverlay.apk",
         ]
 
         target_product = self.ctx.target_dir / "product"
