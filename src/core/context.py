@@ -136,11 +136,12 @@ class PortingContext:
         # [PREREQUISITE] Get ROM info before wiping source folders
         self.get_rom_info()
 
-        # Aggressive Cleanup: Remove source extraction folders as they've been copied to target
-        self.logger.info("Aggressive Cleanup: Removing source extraction directories...")
-        for source_rom in [self.stock, self.port]:
-            if source_rom.extracted_dir.exists():
-                shutil.rmtree(source_rom.extracted_dir)
+        # [NOTE] Cleanup of extracted_dir is now handled in Phase 4 or end of main.py
+        # because SystemModifier and others still need to access source files.
+        # self.logger.info("Aggressive Cleanup: Removing source extraction directories...")
+        # for source_rom in [self.stock, self.port]:
+        #     if source_rom.extracted_dir.exists():
+        #         shutil.rmtree(source_rom.extracted_dir)
             # Note: We keep images_dir for now as firmware copy-back might still need it
 
         self.logger.info("Target Workspace Initialized.")

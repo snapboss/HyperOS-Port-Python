@@ -120,6 +120,14 @@ def main():
         # App patching
         AppPatcher(ctx, framework_modifier).run()
 
+        # Aggressive Cleanup Phase 2: Remove source extraction folders before repacking
+        # to save space for large image creation (super.img)
+        logger.info(">>> Phase 3.5: Post-Modification Cleanup")
+        for source_rom in [stock, port]:
+            if source_rom.extracted_dir.exists():
+                logger.info(f"Cleaning up {source_rom.label} extraction...")
+                shutil.rmtree(source_rom.extracted_dir)
+
         # Execute Phase 4: Image Repacking
         logger.info(">>> Phase 4: Repacking")
         packer = Repacker(ctx)

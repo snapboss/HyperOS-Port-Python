@@ -87,7 +87,7 @@ class SystemModifier:
         return None
 
     def _replace_overlays(self):
-        # Refined list to fix status bar alignment issues
+        """Replace the 4 specific overlays to fix status bar alignment issues."""
         overlay_list = [
             "AospFrameworkResOverlay.apk",
             "MiuiFrameworkResOverlay.apk",
@@ -98,13 +98,36 @@ class SystemModifier:
         target_product = self.ctx.target_dir / "product"
         stock_product = self.ctx.stock.extracted_dir / "product"
 
+        self.logger.info(f"Checking for {len(overlay_list)} specific overlays...")
         for apk_name in overlay_list:
-            base_apk = self._find_file_recursive(stock_product, apk_name)
-            port_apk = self._find_file_recursive(target_product, apk_name)
+            # Case-insensitive rglob search for the APK name
+            # This handles both product/overlay/name.apk and product/overlay/name/name.apk
+            base_apk = None
+            try:
+                # Use a more robust search for the APK name
+                # This matches name.apk anywhere in the product tree
+                base_apk = next(stock_product.rglob(f"*/{apk_name}"), None)
+                if not base_apk:
+                     base_apk = next(stock_product.rglob(apk_name), None)
+            except: pass
+
+            port_apk = None
+            try:
+                port_apk = next(target_product.rglob(f"*/{apk_name}"), None)
+                if not port_apk:
+                     port_apk = next(target_product.rglob(apk_name), None)
+            except: pass
 
             if base_apk and port_apk:
-                self.logger.info(f"Replacing [{apk_name}]...")
+                self.logger.info(f"  Replacing: {apk_name}")
+                self.logger.debug(f"    From: {base_apk}")
+                self.logger.debug(f"    To:   {port_apk}")
                 shutil.copy2(base_apk, port_apk)
+            else:
+                if not base_apk:
+                    self.logger.warning(f"  Overlay [{apk_name}] NOT FOUND in stock ROM.")
+                if not port_apk:
+                    self.logger.warning(f"  Overlay [{apk_name}] NOT FOUND in port ROM.")
 
     def _migrate_configs(self):
         target_product = self.ctx.target_dir / "product"
@@ -141,20 +164,15 @@ class SystemModifier:
     def _relocate_pangu(self):
         """
         Move files from /product/pangu/system/ to /product/
-        1. /product/pangu/system/app -> product/app
-        2. /product/pangu/system/etc/permission -> product/etc/permissions
-        3. /product/pangu/system/priv-app -> product/priv-app
+        Ensures NO OVERWRITING of existing stock files to preserve duchamp configs.
         """
-        self.logger.info("Starting Pangu relocation...")
+        self.logger.info("Starting Pangu relocation (Safe Mode)...")
         product_dir = self.ctx.target_dir / "product"
         pangu_dir = product_dir / "pangu"
         
         if not pangu_dir.exists():
-            self.logger.info("Pangu directory not found, skipping relocation.")
             return
 
-        # Define relocation mappings
-        # (src_relative_to_pangu, target_relative_to_product)
         mappings = [
             ("system/app", "app"),
             ("system/etc/permission", "etc/permissions"),
@@ -162,18 +180,29 @@ class SystemModifier:
             ("system/priv-app", "priv-app")
         ]
 
+        relocated_count = 0
         for src_rel, tgt_rel in mappings:
             src_path = pangu_dir / src_rel
             tgt_path = product_dir / tgt_rel
             
             if src_path.exists():
-                self.logger.info(f"Relocating Pangu: {src_rel} -> {tgt_rel}")
                 tgt_path.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(src_path, tgt_path, dirs_exist_ok=True)
+                
+                # Manual recursive copy to check for existence
+                for item in src_path.rglob("*"):
+                    if item.is_file():
+                        rel_path = item.relative_to(src_path)
+                        final_target = tgt_path / rel_path
+                        
+                        if not final_target.exists():
+                            final_target.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(item, final_target)
+                            relocated_count += 1
+                        else:
+                            self.logger.debug(f"  Skipping existing file: {rel_path}")
 
-        self.logger.info("Aggressive Cleanup: Removing Pangu residue.")
+        self.logger.info(f"Pangu relocation completed. Relocated {relocated_count} new files.")
         shutil.rmtree(pangu_dir)
-        self.logger.info("Pangu relocation completed.")
 
     def _apktool_decode(self, apk_path: Path, out_dir: Path):
         self.shell.run_java_jar(self.apktool, ["d", str(apk_path), "-o", str(out_dir), "-f"])
@@ -233,38 +262,14 @@ class SystemModifier:
                     shutil.copy2(item, target_apex_dir / item.name)
 
     def _merge_mi_ext(self):
-        """Merge mi_ext contents into other partitions as requested"""
-        self.logger.info("Merging mi_ext into other partitions...")
+        """Merge mi_ext contents into other partitions without overwriting."""
+        self.logger.info("Merging mi_ext into other partitions (Safe Mode)...")
         
         mi_ext_dir = self.ctx.target_dir / "mi_ext"
         if not mi_ext_dir.exists():
             self.logger.warning("mi_ext partition not found, skipping merge.")
             return
 
-        # 1. mi_ext/system/* -> system/system/ (fallback to system/)
-        src_system = mi_ext_dir / "system"
-        if src_system.exists():
-            target_system = self.ctx.target_dir / "system/system"
-            if not target_system.exists():
-                target_system = self.ctx.target_dir / "system"
-            
-            self.logger.info(f"Merging mi_ext/system -> {target_system.name}")
-            shutil.copytree(src_system, target_system, dirs_exist_ok=True)
-
-        # 2. mi_ext/system_ext/* -> system_ext/
-        src_system_ext = mi_ext_dir / "system_ext"
-        if src_system_ext.exists():
-            target_system_ext = self.ctx.target_dir / "system_ext"
-            self.logger.info("Merging mi_ext/system_ext -> system_ext")
-            shutil.copytree(src_system_ext, target_system_ext, dirs_exist_ok=True)
-
-        # 3. mi_ext/product/* -> product/
-        src_product = mi_ext_dir / "product"
-        if src_product.exists():
-            target_product = self.ctx.target_dir / "product"
-            self.logger.info("Merging mi_ext/product -> product")
-            shutil.copytree(src_product, target_product, dirs_exist_ok=True)
-        
         self.logger.info("mi_ext merge complete. mi_ext directory kept for property migration.")
     
     def _apply_device_overrides(self):
