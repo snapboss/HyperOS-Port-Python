@@ -1,0 +1,16 @@
+{
+    "android_14": {
+        "ro.miui.has_gmscore": "1",
+        "persist.sys.timezone": "Asia/Shanghai"
+    },
+    "android_15": {
+        "ro.miui.has_gmscore": "1",
+        "persist.sys.timezone": "Asia/Shanghai"
+    },
+    "common": {
+        "ro.debuggable": "0",
+        "ro.secure": "1",
+        "ro.build.type": "user",
+        "ro.build.tags": "release-keys"
+    }
+}

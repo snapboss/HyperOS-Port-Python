@@ -1,0 +1,14 @@
+{
+    "phonesky": {
+        "enabled": true,
+        "description": "Google Play Store"
+    },
+    "velvet": {
+        "enabled": true,
+        "description": "Google App"
+    },
+    "extra_gms": {
+        "enabled": true,
+        "description": "Other GMS components in gapps folder"
+    }
+}

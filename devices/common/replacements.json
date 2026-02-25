@@ -1,0 +1,15 @@
+[
+    {
+        "description": "StatusBar and Framework Overlays",
+        "type": "file",
+        "search_path": "product",
+        "match_mode": "recursive",
+        "ensure_exists": false,
+        "files": [
+            "AospFrameworkResOverlay.apk",
+            "MiuiFrameworkResOverlay.apk",
+            "DevicesAndroidOverlay.apk",
+            "DevicesOverlay.apk"
+        ]
+    }
+]

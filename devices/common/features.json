@@ -1,0 +1,19 @@
+[
+    {
+        "name": "aod",
+        "label": "Always On Display",
+        "props": {
+            "ro.vendor.display.ad.enable": "true",
+            "ro.vendor.display.as.enable": "true",
+            "persist.vendor.max.fps": "120"
+        }
+    },
+    {
+        "name": "ai_display",
+        "label": "AI Image Enhancement",
+        "props": {
+            "ro.vendor.display.ai_display.enable": "true",
+            "ro.vendor.display.memc.enable": "true"
+        }
+    }
+]

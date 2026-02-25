@@ -2,6 +2,7 @@ import argparse
 import logging
 import sys
 import shutil
+import subprocess
 from pathlib import Path
 
 from src.core.apk_patcher import AppPatcher
@@ -47,6 +48,13 @@ def main():
     log_level = logging.DEBUG if args.debug else logging.INFO
     setup_logging(log_level)
     
+    logger.info("Initializing environment...")
+    try:
+        subprocess.run(["git", "lfs", "pull"], check=False)
+        logger.info("Git LFS assets pulled successfully (or git-lfs not installed).")
+    except Exception as e:
+        logger.warning(f"Failed to run git lfs pull: {e}")
+
     logger.info("Starting HyperOS Porting Tool...")
     logger.info(f"Stock ROM: {args.stock}")
     logger.info(f"Port ROM:  {args.port}")

@@ -3,6 +3,7 @@ import shutil
 import time
 import re
 import logging
+import json
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -17,6 +18,17 @@ class PropertyModifier:
         # Custom build info (can be passed from external parameters)
         self.build_user = os.getenv("BUILD_USER", "Bruce")
         self.build_host = os.getenv("BUILD_HOST", "HyperOS-Port")
+        self.common_config_dir = Path("devices/common").resolve()
+
+    def _load_config(self, filename: str):
+        config_path = self.common_config_dir / filename
+        if config_path.exists():
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                self.logger.error(f"Failed to load config {filename}: {e}")
+        return None
 
     def run(self):
         """Execute all property modification logic"""
@@ -374,12 +386,11 @@ class PropertyModifier:
 
 
     def _apply_performance_props(self):
-        """Append a comprehensive list of performance, battery, and security properties to product/etc/build.prop"""
-        self.logger.info("Applying performance and battery tuning properties...")
+        """Append performance, battery, and security properties from JSON configuration."""
+        self.logger.info("Applying performance and battery tuning properties from JSON...")
         
         prop_file = self.ctx.target_dir / "product" / "etc" / "build.prop"
         if not prop_file.exists():
-            # Fallback to system/build.prop if product one doesn't exist
             prop_file = self.ctx.target_dir / "system" / "system" / "build.prop"
             if not prop_file.exists():
                 prop_file = self.ctx.target_dir / "system" / "build.prop"
@@ -387,153 +398,48 @@ class PropertyModifier:
                     self.logger.warning("Target build.prop for performance tweaks not found.")
                     return
 
-        props_to_add = [
-            "\n# Performance, Battery, and Security Tuning",
-            "ro.control_privapp_permissions=",
-            "ro.miui.has_gmscore=1",
-            "ro.boot.veritymode=enforcing",
-            "ro.boot.verifiedbootstate=green",
-            "vendor.boot.verifiedbootstate=green",
-            "vendor.boot.vbmeta.device_state=locked",
-            "ro.boot.vbmeta.device_state=locked",
-            "ro.boot.flash.locked=1",
-            "ro.secureboot.lockstate=locked",
-            "vendor.boot.vbmeta.device_state=locked",
-            "ro.boot.selinux=enforcing",
-            "ro.build.tags=release-keys",
-            "ro.boot.warranty_bit=0",
-            "ro.vendor.boot.warranty_bit=0",
-            "ro.vendor.warranty_bit=0",
-            "ro.warranty_bit=0",
-            "ro.is_ever_orange=0",
-            "ro.build.type=user",
-            "ro.debuggable=0",
-            "ro.secure=1",
-            "ro.crypto.state=encrypted",
-            "ro.oem_unlock_supported=0",
-            "androidboot.flash.locked=1",
-            "\n# Dk",
-            "ro.surface_flinger.use_content_detection_for_refresh_rate=true",
-            "ro.surface_flinger.set_idle_timer_ms=2147483647",
-            "ro.surface_flinger.set_touch_timer_ms=2147483647",
-            "ro.surface_flinger.set_display_power_timer_ms=2147483647",
-            "\n# Anim",
-            "persist.sys.miui_animator_sched.bigcores=4-6",
-            "persist.sys.miui_animator_sched.sched_threads=2",
-            "persist.sys.miui.sf_cores=4-7",
-            "persist.vendor.display.miui.composer_boost=4-7",
-            "persist.sys.miui_animator_sched.big_prime_cores=4-7",
-            "persist.sys.minfree_def=73728,92160,110592,154832,482560,579072",
-            "persist.sys.minfree_6g=73728,92160,110592,258048,663552,903168",
-            "persist.sys.minfree_8g=73728,92160,110592,387072,1105920,1451520",
-            "persist.sys.first.frame.accelerates=true",
-            "ro.miui.affinity.sfui=4-6",
-            "ro.miui.affinity.sfre=4-6",
-            "ro.miui.affinity.sfuireset=0-6",
-            "persist.sys.power.default.powermode=1",
-            "\n# RAMBOOST PROPS",
-            "persist.vendor.sys.memplus.enable=true",
-            "persist.sys.purgeable_assets=1",
-            "persist.service.pcsync.enable=0",
-            "persist.service.lgospd.enable=0",
-            "\n# Better Scrolling",
-            "ro.min_pointer_dur=8",
-            "ro.max.fling_velocity=12000",
-            "windowsmgr.max_events_per_sec=120",
-            "\n# Improved performance",
-            "debug.performance.tuning=1",
-            "debug.mdpcomp.logs=0",
-            "\n# ------------BATTERY-------------",
-            "wifi.supplicant_scan_interval=180",
-            "\n# Remain launcher in memory",
-            "ro.HOME_APP_ADJ=1",
-            "ro.HOME_APP_MEM=4096",
-            "ro.FOREGROUND_APP_ADJ=0",
-            "ro.VISIBLE_APP_ADJ=1",
-            "ro.PERCEPTIBLE_APP_ADJ=2",
-            "ro.HEAVY_WEIGHT_APP_ADJ=4",
-            "ro.SECONDARY_SERVER_ADJ=5",
-            "ro.BACKUP_APP_ADJ=6",
-            "ro.HIDDEN_APP_MIN_ADJ=7",
-            "ro.EMPTY_APP_ADJ=15",
-            "ro.FOREGROUND_APP_MEM=128",
-            "ro.VISIBLE_APP_MEM=256",
-            "ro.PERCEPTIBLE_APP_MEM=384",
-            "ro.HEAVY_WEIGHT_APP_MEM=64",
-            "ro.SECONDARY_SERVER_MEM=768",
-            "ro.BACKUP_APP_MEM=896",
-            "ro.HIDDEN_APP_MEM=128",
-            "ro.CONTENT_PROVIDER_MEM=1536",
-            "ro.EMPTY_APP_MEM=2048",
-            "\n# Disable vendor ram dumps",
-            "persist.sys.ssr.enable_ramdumps=1",
-            "\n# Disable DPM debugging",
-            "persist.vendor.dpm.loglevel=0",
-            "persist.vendor.dpmhalservice.loglevel=0",
-            "\n# Increase GPU buffer count, does make rendering faster",
-            "debug.egl.buffcount=4",
-            "\n# Background process Limit",
-            "ro.sys.fw.bg_apps_limit=10",
-            "ro.sys.fw.use_trimming=1",
-            "persist.sys.use_dithering=0",
-            "\n# Enable ZRAM",
-            "ro.config.zram=true",
-            "ro.ril.power_collapse=1",
-            "pm.sleep_mode=1",
-            "wifi.supplicant_scan_interval=180",
-            "ro.mot.eri.losalert.delay=1000",
-            "ro.config.hw_quickpoweron=true",
-            "\n# RAM",
-            "persist.service.pcsync.enable=0",
-            "persist.service.lgospd.enable=0",
-            "\n# lmkd stuff ",
-            "ro.lmk.debug=false",
-            "persist.sys.lmk.reportkills=false",
-            "sys.lmk.reportkills=false",
-            "ro.lmk.log_stats=false",
-            "\n# Art (thanks random dts)",
-            "dalvik.vm.minidebuginfo=false",
-            "dalvik.vm.dex2oat-minidebuginfo=false",
-            "dalvik.vm.checkjni=false",
-            "\n# all the battery stuff i could find that helped",
-            "persist.radio.add_power_save=1",
-            "ro.ril.power.collapse=1",
-            "ro.ril.sensor.sleep.control=1",
-            "pm.sleep_mode=1",
-            "ro.ril.disable.power.collapse=0",
-            "\n# Increase GPU buffer count, does make rendering faster",
-            "debug.egl.buffcount=4",
-            "\n# Optimize Network",
-            "net.ipv4.tcp_sack=1",
-            "net.ipv4.tcp_fack=1",
-            "net.ipv4.tcp_no_metrics_save=1",
-            "net.ipv4.icmp_echo_ignore_all=1",
-            "net.ipv4.tcp_moderate_rcvbuf=1",
-            "net.ipv4.conf.default.accept_redirects=0",
-            "net.ipv4.conf.all.rp_filter=1",
-            "persist.cust.tel.eons=1",
-            "persist.cust.tel.adapt=1",
-            "\n# Set Dalvik heap growth limit to 128MB",
-            "dalvik.vm.heapgrowthlimit=128m",
-            "\n# Set the maximum heap size to 256MB",
-            "dalvik.vm.heapsize=256m",
-            "\n# Enable JIT compiler for Dalvik dalvik.vm.execution-mode=int:jit",
-            "# Increase the number of JIT compilation threads to 4",
-            "dalvik.vm.jit-threads=4",
-            "\n# Set the maximum bytecode verification depth to 10",
-            "dalvik.vm.checkjni=false",
-            "\n# Disable the inline optimization of method calls",
-            "dalvik.vm.dexopt-flags=m=y",
-            "\n# Qs lag fix",
-            "dalvik.vm.image-dex2oat-threads=8",
-            "dalvik.vm.image-dex2oat-filter=speed",
-            "\n# Fast Reboot",
-            "ro.config.hw_quickpoweron=true",
-            "persist.sys.shutdown.mode=hibernate",
-            "\n# Random",
-            "dalvik.vm.heapminfree=2m",
-            "dalvik.vm.heapmaxfree=8m"
-        ]
+        props_to_add = []
+        
+        # 1. Load global props
+        global_props = self._load_config("props_global.json")
+        if global_props:
+            # Add common props
+            common = global_props.get("common", {})
+            for k, v in common.items():
+                props_to_add.append(f"{k}={v}")
+            
+            # Add version specific props
+            ver_key = f"android_{self.ctx.port_android_version}"
+            ver_props = global_props.get(ver_key, {})
+            for k, v in ver_props.items():
+                props_to_add.append(f"{k}={v}")
+
+        # 2. Load scheduler props
+        scheduler_config = self._load_config("scheduler.json")
+        if scheduler_config:
+            # Add default scheduler
+            default_sched = scheduler_config.get("default", {})
+            for k, v in default_sched.items():
+                props_to_add.append(f"{k}={v}")
+            
+            # Add version specific scheduler
+            ver_key = f"android_{self.ctx.port_android_version}"
+            ver_sched = scheduler_config.get(ver_key, {})
+            for k, v in ver_sched.items():
+                props_to_add.append(f"{k}={v}")
+
+        if not props_to_add:
+            self.logger.warning("No properties found in JSON configs, using fallback or skipping.")
+            # We could keep the major list as fallback, but for now we expect JSON to be present.
+            return
+
+        try:
+            with open(prop_file, "a", encoding='utf-8') as f:
+                f.write("\n# Performance, Battery, and Security Tuning (JSON driven)\n")
+                f.write("\n".join(props_to_add) + "\n")
+            self.logger.info(f"Successfully appended {len(props_to_add)} props to {prop_file.name}")
+        except Exception as e:
+            self.logger.error(f"Failed to append performance props: {e}")
 
         try:
             with open(prop_file, "a", encoding='utf-8') as f:

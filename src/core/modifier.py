@@ -46,6 +46,17 @@ class SystemModifier:
         self.apktool = self.bin_dir / "apktool.jar"
         
         self.temp_dir = self.ctx.target_dir.parent / "temp"
+        self.common_config_dir = Path("devices/common").resolve()
+
+    def _load_config(self, filename: str):
+        config_path = self.common_config_dir / filename
+        if config_path.exists():
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                self.logger.error(f"Failed to load config {filename}: {e}")
+        return None
 
     def run(self):
         self.logger.info("Starting System Modification...")
@@ -87,13 +98,23 @@ class SystemModifier:
         return None
 
     def _replace_overlays(self):
-        """Replace the 4 specific overlays to fix status bar alignment issues."""
-        overlay_list = [
-            "AospFrameworkResOverlay.apk",
-            "MiuiFrameworkResOverlay.apk",
-            "DevicesAndroidOverlay.apk",
-            "DevicesOverlay.apk",
-        ]
+        """Replace specific overlays based on JSON configuration."""
+        config = self._load_config("replacements.json")
+        overlay_list = []
+        if config:
+            for item in config:
+                if item.get("description") == "StatusBar and Framework Overlays":
+                    overlay_list = item.get("files", [])
+                    break
+        
+        if not overlay_list:
+            self.logger.warning("No overlay list found in replacements.json, using fallback.")
+            overlay_list = [
+                "AospFrameworkResOverlay.apk",
+                "MiuiFrameworkResOverlay.apk",
+                "DevicesAndroidOverlay.apk",
+                "DevicesOverlay.apk",
+            ]
 
         target_product = self.ctx.target_dir / "product"
         stock_product = self.ctx.stock.extracted_dir / "product"
@@ -350,20 +371,13 @@ class SystemModifier:
             self.logger.error("Invalid manifest.xml: No </manifest> tag found.")
 
     def _debloat_system(self):
-        """Debloat system by removing unnecessary apps to save space in super.img"""
+        """Debloat system based on JSON configuration."""
         self.logger.info("Starting Debloating...")
         
-        debloat_apps = [
-            "MSA", "mab", "Updater", "MiuiUpdater", "MiService", "MIService", 
-            "SoterService", "Hybrid", "AnalyticsCore", "AiasstVision", 
-            "VoiceTrigger", "UPTsmService", "ConfigUpdater", "AIService", 
-            "CarWith", "MiBugReportOS3", "MINextpay", "MiGameService_GameAI_MTK", 
-            "MIUIAiasstService", "MIUISecurityInputMethod", "PaymentService", 
-            "GoogleServicesUpdater", "BaiduIME", "iFlytekIME", "MIpay", 
-            "MIUIDuokanReader", "MIUIEmail", "MIUIHuanji", "MIUIMiDrive", 
-            "MIUINewHome_Removable", "MIUIVirtualSim", "OS2VipAccount", "wps-lite",
-            "Health", "SogouIME", "VoiceAssistAndroidT", "VoiceAssistProxy"
-        ]
+        debloat_apps = self._load_config("debloat.json")
+        if not debloat_apps:
+            self.logger.warning("No debloat list found in debloat.json, skipping.")
+            return
 
         # Partitions to search for debloat targets
         partitions = ["product"]
@@ -423,9 +437,13 @@ class SystemModifier:
         self.logger.info(f"Data-app migration completed. Migrated {migrated_count} items.")
 
     def _install_custom_apps(self):
-        """Detect and install Gboard (LatinImeGoogle) and Via browser from project root or gapps/"""
-        self.logger.info("Checking for custom apps to install (LatinImeGoogle, Via)...")
-        custom_apps = ["LatinImeGoogle", "Via"]
+        """Detect and install custom apps defined in JSON configuration."""
+        custom_apps = self._load_config("custom_apps.json")
+        if not custom_apps:
+            self.logger.warning("No custom apps list found in custom_apps.json, using fallback.")
+            custom_apps = ["LatinImeGoogle", "Via"]
+        
+        self.logger.info(f"Checking for custom apps to install: {custom_apps}")
         target_app_dir = self.ctx.target_dir / "product/app"
         gapps_dir = Path("gapps").resolve()
         
@@ -455,13 +473,17 @@ class SystemModifier:
 
     def _integrate_gms(self):
         """
-        Integrate GMS from ZIP packages in gapps/ directory.
-        Handles mapping of ___etc___permissions to etc/permissions, etc.
+        Integrate GMS from ZIP packages in gapps/ directory based on JSON configuration.
         """
         self.logger.info("Starting GMS integration from ZIPs...")
         gapps_dir = Path("gapps").resolve()
         target_product = self.ctx.target_dir / "product"
         
+        gms_config = self._load_config("gms.json")
+        if not gms_config:
+            self.logger.warning("No GMS config found in gms.json, allowing all extra components.")
+            gms_config = {"extra_gms": {"enabled": True}}
+
         if not gapps_dir.exists():
             self.logger.info("gapps/ directory not found, skipping GMS integration.")
             return
@@ -472,6 +494,19 @@ class SystemModifier:
             return
 
         for gms_zip in zip_files:
+            # Check if this component is enabled in JSON
+            # Logic: check for stem match (phonesky, velvet)
+            stem_lower = gms_zip.stem.lower()
+            config_item = gms_config.get(stem_lower)
+            
+            if config_item:
+                if not config_item.get("enabled", False):
+                    self.logger.info(f"Skipping GMS ZIP {gms_zip.name} as it is disabled in gms.json")
+                    continue
+            elif not gms_config.get("extra_gms", {}).get("enabled", True):
+                 self.logger.info(f"Skipping extra GMS ZIP {gms_zip.name} as extra_gms is disabled in gms.json")
+                 continue
+
             self.logger.info(f"Processing GMS ZIP: {gms_zip.name}")
             temp_extract = self.temp_dir / f"gms_{gms_zip.stem}"
             if temp_extract.exists(): shutil.rmtree(temp_extract)
