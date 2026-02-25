@@ -150,6 +150,9 @@ def main():
         else:
             # Generate OTA payload (Recovery)
             packer.pack_ota_payload() 
+            
+        # Final cleanup of raw partition folders
+        packer.cleanup_target()
 
     except Exception as e:
         logger.error(f"An error occurred during porting: {e}", exc_info=True)

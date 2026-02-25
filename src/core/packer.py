@@ -117,13 +117,9 @@ class Repacker:
         try:
             self.shell.run(cmd)
             self.logger.info(f"Successfully packed {part_name}.img (EROFS)")
-            
-            # Aggressive Cleanup: Delete source directory after packing
-            if src_dir.exists():
-                self.logger.info(f"Aggressive Cleanup: Removing raw folder {part_name}")
-                shutil.rmtree(src_dir)
         except Exception as e:
             self.logger.error(f"Failed to pack {part_name}: {e}")
+            raise
 
     def _pack_ext4(self, part_name, src_dir, img_output, fs_config, file_contexts, is_rw):
         """Pack EXT4 image with size calculation and regeneration"""
@@ -823,6 +819,21 @@ class Repacker:
             
         except Exception as e:
             self.logger.error(f"OTA generation failed: {e}")
+            raise
+
+    def cleanup_target(self):
+        """
+        Final cleanup: Remove raw partition folders in target_dir.
+        Should only be called after all packing (Super, OTA) is complete.
+        """
+        self.logger.info("Performing final cleanup of target workspace...")
+        for item in self.ctx.target_dir.iterdir():
+            if item.is_dir() and item.name not in ["config", "repack_images"]:
+                try:
+                    self.logger.debug(f"Removing directory: {item.name}")
+                    shutil.rmtree(item)
+                except Exception as e:
+                    self.logger.warning(f"Failed to remove {item.name}: {e}")
 
     def _get_super_size(self):
         """
